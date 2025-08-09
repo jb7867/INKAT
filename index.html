@@ -1,0 +1,2125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naloxone Training Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            border: 1px solid #000;
+            background-color: #fff;
+        }
+        #gameContainer {
+            position: relative;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script>
+        // Virtual resolution for scaling
+        const VIRTUAL_WIDTH = 800;
+        const VIRTUAL_HEIGHT = 600;
+
+        // Game State Management
+        const GameState = {
+            START: 'start',
+            LEVEL_0_5: 'level_0_5', // Add this new state
+            LEVEL_1: 'level_1',
+            LEVEL_1_5: 'level_1_5',
+            LEVEL_2: 'level_2',
+            LEVEL_2_5: 'level_2_5',
+            LEVEL_3: 'level_3',
+            LEVEL_4: 'level_4',
+            LEVEL_5: 'level_5',
+            TRANSITION: 'transition',
+            COMPLETE: 'complete'
+        };
+
+        // Game variables
+        let currentState = GameState.START;
+        let canvas = document.getElementById('gameCanvas');
+        let ctx = canvas.getContext('2d');
+        
+        // Feedback system for canvas
+        let feedback = {
+            visible: false,
+            text: ""
+        };
+        
+        // Mouse tracking
+        let mouse = { x: 0, y: 0, isDown: false };
+        let lastMousePos = { x: 0, y: 0, timestamp: 0 };
+        
+        // Level specific variables
+        let level1 = {
+            hoveredOption: null, // Add hover tracking
+            options: [
+                { text: "Blue lips and fingertips", x: 280, y: 360, width: 220, height: 80, correct: true, selected: false },
+                { text: "Heart is racing", x: 520, y: 360, width: 220, height: 80, correct: false, selected: false },
+                { text: "Responsive to their name", x: 280, y: 460, width: 220, height: 80, correct: false, selected: false },
+                { text: "Gurgling of the mouth", x: 520, y: 460, width: 220, height: 80, correct: true, selected: false }
+            ],
+            answerSubmitted: false // Add this to prevent multiple clicks after feedback
+        };
+
+        // Add new level 1.5 variables
+        let level1_5 = {
+            hoveredOption: null, // Add hover tracking
+            options: [
+                { text: "Chest compressions", x: 280, y: 360, width: 220, height: 80, correct: false, selected: false },
+                { text: "Perform CPR", x: 520, y: 360, width: 220, height: 80, correct: false, selected: false },
+                { text: "Call 999", x: 280, y: 460, width: 220, height: 80, correct: true, selected: false },
+                { text: "Immediately use Naloxone", x: 520, y: 460, width: 220, height: 80, correct: false, selected: false }
+            ],
+            answerSubmitted: false // Add this to prevent multiple clicks
+        };
+
+        let level2 = {
+            kitOpened: false,
+            sachetOpened: false,
+            needleVisible: false,
+            needleAttached: false,
+            needleBroken: false,
+            canDragNeedle: false,
+            dragSpeed: 0,
+            
+            kit: { x: 100, y: 200, width: 120, height: 325 }, // 1.5x bigger, correct aspect ratio for "case 1"
+            sachet: { x: 120, y: 200, width: 184, height: 200, visible: false }, // width = height * 0.92
+            syringe: { x: 550, y: 270, width: 250, height: 115, visible: false }, // Move syringe right
+            needle: { x: 140, y: 320, width: 320, height: 100, visible: false, isDragging: false }, // Move needle left
+            assembledSyringe: { x: 400, y: 300, width: 400, height: 102, visible: false }
+        };
+
+        let level3 = {
+            hoveredPart: null,
+            selectedSite: null, // Add this to track which site was selected
+            answerSubmitted: false, // Add this to prevent multiple clicks after feedback
+            injectionSites: [
+                // Correct sites (green areas) - thigh areas
+                { name: "Thigh", x: 440, y: 420, width: 80, height: 120, correct: true },
+                { name: "Upper arm/Shoulder", x: 430, y: 90, width: 100, height: 60, correct: true },
+                // Incorrect sites (red areas)
+                { name: "Calve", x: 310, y:390, width: 70, height: 120, correct: false },
+                { name: "Forearm", x: 300, y: 100, width: 85, height: 40, correct: false },
+                { name: "Back/Spine", x: 500, y: 150, width: 30, height: 100, correct: false }
+            ]
+        };
+
+        let level4 = {
+            selectedPosition: 0,
+            dragging: false,
+            injectionComplete: false,
+            injectionTimer: 0,
+            injectionStarted: false,
+            injectionHeld: false,
+            
+            naloxone: { x: 100, y: 120, width: 600, height: 195 },
+            selector: { x: 150, y: 350, width: 500, height: 50 },
+            selectorKnob: { x: 150, y: 350, width: 30, height: 60 },
+            injectButton: { x: 400, y: 470, width: 180, height: 60 },
+            
+            correctPosition: 4,  // Position 1 is now at index 4 (far right)
+            
+            // For animation
+            overlayAlpha: 0
+        };
+
+        let level5 = {
+            patientAwake: false,
+            attempts: 0,
+            maxAttempts: 3,
+            waitingTimer: 0,
+            waiting: false,
+            waitingMax: 180,  // 3 seconds at 60 fps
+            hoveredOption: null, // Add hover tracking
+            
+            options: [
+                { text: "Administer another dose immediately!", x: 400, y: 250, width: 380, height: 50, correct: false },
+                { text: "Wait 2-3 minutes before using another dose", x: 400, y: 320, width: 380, height: 50, correct: true }
+            ]
+        };
+
+        let attempts = Number(localStorage.getItem('naloxone_attempts')) || 0;
+
+        // Initialize the game
+        function init() {
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            
+            // Start the game loop
+            gameLoop();
+        }
+
+        // Main game loop
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Update game logic
+        function update() {
+            // Save previous mouse position and time for drag speed calculation
+            const prevMousePos = { ...mouse, timestamp: Date.now() };
+
+            switch(currentState) {
+                case GameState.START:
+                    // Stay on start screen until clicked
+                    break;
+                case GameState.LEVEL_1:
+                    break;
+                case GameState.LEVEL_1_5: // Add this case
+                    break;
+                case GameState.LEVEL_2:
+                    // Handle needle dragging
+                    if (level2.needle.isDragging && level2.canDragNeedle) {
+                        level2.needle.x = mouse.x - level2.needle.width / 2;
+                        level2.needle.y = mouse.y - level2.needle.height / 2;
+                        
+                        // Calculate drag speed for "breaking" mechanic
+                        const dx = mouse.x - lastMousePos.x;
+                        const dy = mouse.y - lastMousePos.y;
+                        const timeDiff = Date.now() - lastMousePos.timestamp;
+                        
+                        if (timeDiff > 0) {
+                            level2.dragSpeed = Math.sqrt(dx*dx + dy*dy) / timeDiff * 1000;
+                            
+                            // Check if dragging too fast - much more sensitive now
+                            if (level2.dragSpeed > 800) { // Reduced from 2000 to 800
+                                level2.needleBroken = true;
+                                level2.needle.isDragging = false;
+                                level2.canDragNeedle = false;
+                                showFeedback("You broke the needle! Handle it carefully and slowly.");
+                                attempts++;
+                                localStorage.setItem('naloxone_attempts', attempts);
+                                setTimeout(() => {
+                                    resetLevel1();
+                                    resetLevel1_5(); // Add this line
+                                    hideFeedback();
+                                    resetLevel2();
+                                    resetLevel4();
+                                    currentState = GameState.START; // Changed from LEVEL_1 to START
+                                }, 2000);
+                            }
+                        }
+                        
+                        // Check if needle is placed on syringe
+                        if (isOverlapping(level2.needle, level2.syringe) && mouse.isDown) {
+                            level2.needleAttached = true;
+                            level2.needle.visible = false;
+                            level2.syringe.visible = false;
+                            level2.assembledSyringe.visible = true;
+                            level2.needle.isDragging = false;
+                            
+                            showFeedback("Needle attached correctly!");
+                            setTimeout(() => {
+                                showFeedback("Great job! Moving to the next stage...");
+                                setTimeout(() => {
+                                    currentState = GameState.LEVEL_2_5;
+                                    hideFeedback();
+                                }, 2000); // Show assembled syringe for 4 seconds
+                            }, 1500);    // <-- This is the delay after "Needle attached correctly!"
+                        }
+                    }
+                    break; // <-- ADD THIS LINE
+                case GameState.LEVEL_3:
+                // Logic handled in mouse events
+                    break;
+            
+                case GameState.LEVEL_4:
+                    updateLevel4();
+                    break;
+                
+                case GameState.LEVEL_5:
+                    updateLevel5();
+                    break;
+                
+                case GameState.TRANSITION:
+                    // Waiting for timeout to complete
+                    break;
+                
+                case GameState.COMPLETE:
+                    // Game complete
+                    break;
+            }
+
+            // Update last mouse position for next frame
+            lastMousePos = prevMousePos;
+        }
+            
+            function updateLevel4() {
+            // Update selector knob position when dragging
+            if (level4.dragging) {
+                // Calculate position (0 to 4 for positions 1-5)
+                let newPos = (mouse.x - level4.selector.x) / level4.selector.width;
+                newPos = Math.max(0, Math.min(1, newPos));
+                level4.selectedPosition = Math.floor(newPos * 5);
+                
+                // Ensure we don't go beyond position 5 (index 4)
+                if (level4.selectedPosition > 4) {
+                    level4.selectedPosition = 4;
+                }
+                
+                // Update knob position
+                level4.selectorKnob.x = level4.selector.x + (level4.selector.width * (level4.selectedPosition / 4)) - (level4.selectorKnob.width / 2);
+            }
+            
+            // Handle injection process
+            if (level4.injectionStarted) {
+                level4.injectionTimer++;
+                
+                // Update overlay alpha for "injection" visual effect
+                level4.overlayAlpha = Math.min(0.5, level4.injectionTimer / 60);
+                
+                // Handle injection completion after 1 second (60 frames)
+                if (level4.injectionTimer >= 60) {
+                    level4.injectionComplete = true;
+                    level4.injectionStarted = false;
+                    
+                    // Check if correct position (position 1 = index 4, far right)
+                    if (level4.selectedPosition === level4.correctPosition) {
+                        // Correct position
+                        showFeedback("Correct! Injection successful.");
+                        setTimeout(() => {
+                            showFeedback("Great job! Moving to monitoring stage...");
+                            setTimeout(() => {
+                                currentState = GameState.LEVEL_5;
+                                hideFeedback();
+                            }, 1500);
+                        }, 1500);
+                    } else {
+                        // Wrong position - don't reveal correct answer
+                        showFeedback("Incorrect dosage selected. This could waste supply. Try again.");
+                        attempts++;
+                        localStorage.setItem('naloxone_attempts', attempts);
+                        setTimeout(() => {
+                            resetLevel1();
+                            resetLevel1_5(); // Add this line
+                            hideFeedback();
+                            resetLevel2();
+                            resetLevel4();
+                            currentState = GameState.START; // Changed from LEVEL_1 to START
+                        }, 2000);
+                    }
+                }
+                
+                // Check if injection held too long (more than 1.5 seconds)
+                if (level4.injectionHeld && level4.injectionTimer > 90) {
+                    showFeedback("You administered too much! Be careful with dosage.");
+                    attempts++;
+                    localStorage.setItem('naloxone_attempts', attempts);
+                    setTimeout(() => {
+                        resetLevel1();
+                        resetLevel1_5(); // Add this line
+                        hideFeedback();
+                        resetLevel2();
+                        resetLevel4();
+                        currentState = GameState.START; // Changed from LEVEL_1 to START
+                    }, 2000);
+                }
+            }
+        }
+
+        function updateLevel5() {
+            // Update waiting timer if waiting
+            if (level5.waiting) {
+                level5.waitingTimer++;
+                
+                // After 3 seconds (180 frames)
+                if (level5.waitingTimer >= level5.waitingMax) {
+                    level5.waiting = false;
+                    // Don't increment attempts here since we already did it when the option was selected
+                    
+                    // Patient wakes up after exactly 2 doses
+                    if (level5.attempts >= 2) {
+                        level5.patientAwake = true;
+                        showFeedback("Great! She is responding!");
+                        setTimeout(() => {
+                            showFeedback("Correct! Training complete! You've saved a life!");
+                            currentState = GameState.COMPLETE;
+                        }, 4000); // Increased from 2000ms to 4000ms to show recovery longer
+                    } else {
+                        showFeedback("She is still not responding. Wait 2-3 minutes before using Naloxone again?");
+                        setTimeout(hideFeedback, 1500);
+                    }
+                }
+            }
+            
+            // Remove the fallback code since patient now always wakes after 2 doses
+        }
+
+        // Render game elements
+        function render() {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+            const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+            const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+
+            // Use the pre-loaded image
+            if (bgImg.complete && bgImg.naturalWidth !== 0) {
+                ctx.drawImage(bgImg, 0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+            }
+
+            switch(currentState) {
+                case GameState.START:
+                    renderStart();
+                    break;
+                    
+                case GameState.LEVEL_0_5: // Add this case
+                    renderLevel0_5();
+                    break;
+                
+                case GameState.LEVEL_1:
+                    renderLevel1();
+                    break;
+    
+                case GameState.LEVEL_1_5: // Add this case
+                    renderLevel1_5();
+                    break;
+    
+                case GameState.LEVEL_2:
+                    renderLevel2();
+                    break;
+                
+                case GameState.LEVEL_2_5:
+                    renderLevel2_5();
+                    break;
+                
+                case GameState.LEVEL_3:
+                    renderLevel3();
+                    break;
+                
+                case GameState.LEVEL_4:
+                    renderLevel4();
+                    break;
+                
+                case GameState.LEVEL_5:
+                    renderLevel5();
+                    break;
+                
+                case GameState.COMPLETE:
+                    renderCompletion();
+                    break;
+                
+                case GameState.TRANSITION:
+                    // Just show feedback text during transitions
+                    break;
+            }
+            
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Draw UI in screen space
+            
+            // Draw attempt counter background (darker blue) - make it wider
+            ctx.restore();
+        }
+
+        // Render Start Screen (Level 0)
+        function renderStart() {
+            // Draw main background with proper 21:9 aspect ratio
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+            if (mainBgImage.complete && mainBgImage.naturalWidth !== 0) {
+                // Use 21:9 aspect ratio (2.33:1) with slight zoom to eliminate gaps
+                const imageAspect = 21 / 9; // 2.33:1 aspect ratio
+                const canvasAspect = canvas.width / canvas.height;
+                const zoomFactor = 1.08; // Tiny increase from 1.05 to eliminate remaining gaps
+                
+                let drawWidth, drawHeight, drawX, drawY;
+                
+                if (canvasAspect > imageAspect) {
+                    // Canvas is wider - fit to height with zoom
+                    drawHeight = canvas.height * zoomFactor;
+                    drawWidth = drawHeight * imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = (canvas.height - drawHeight) / 2;
+                } else {
+                    // Canvas is taller - fit to width with zoom
+                    drawWidth = canvas.width * zoomFactor;
+                    drawHeight = drawWidth / imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2; // Center horizontally
+                    drawY = (canvas.height - drawHeight) / 2;
+                }
+                
+                ctx.drawImage(mainBgImage, drawX, drawY, drawWidth, drawHeight);
+            } else {
+                ctx.fillStyle = '#f0f8ff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Restore transform for virtual rendering
+            const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+            const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+            const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+            
+            // Draw blue box at bottom with same color as other levels
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+            ctx.fillRect(0, 520, VIRTUAL_WIDTH, 60);
+            
+            // Draw "Click to begin" text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Helvetica';
+            ctx.textAlign = 'center';
+            ctx.fillText('Click to begin', 400, 555);
+        }
+
+        // Render Level 0.5 (Scenario Introduction)
+        function renderLevel0_5() {
+            // Draw scenario background with proper 21:9 aspect ratio
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+            if (scenarioBgImage.complete && scenarioBgImage.naturalWidth !== 0) {
+                // Use 21:9 aspect ratio (2.33:1) with slight zoom to eliminate gaps
+                const imageAspect = 21 / 9; // 2.33:1 aspect ratio
+                const canvasAspect = canvas.width / canvas.height;
+                const zoomFactor = 1.08; // Same zoom as main background
+                
+                let drawWidth, drawHeight, drawX, drawY;
+                
+                if (canvasAspect > imageAspect) {
+                    // Canvas is wider - fit to height with zoom
+                    drawHeight = canvas.height * zoomFactor;
+                    drawWidth = drawHeight * imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = (canvas.height - drawHeight) / 2;
+                } else {
+                    // Canvas is taller - fit to width with zoom
+                    drawWidth = canvas.width * zoomFactor;
+                    drawHeight = drawWidth / imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = (canvas.height - drawHeight) / 2;
+                }
+                
+                ctx.drawImage(scenarioBgImage, drawX, drawY, drawWidth, drawHeight);
+            } else {
+                ctx.fillStyle = '#f0f8ff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Restore transform for virtual rendering
+            const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+            const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+            const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+            
+            // Draw blue box at bottom with same color as other levels
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+            ctx.fillRect(0, 520, VIRTUAL_WIDTH, 60);
+            
+            // Draw "Click to continue" text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Helvetica';
+            ctx.textAlign = 'center';
+            ctx.fillText('Click to continue', 400, 555);
+        }
+
+        // Render Level 1 (MCQ)
+        function renderLevel1() {
+            // Draw Nate 2 bg background image zoomed in to fill gaps
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+            if (nate2BgImage.complete && nate2BgImage.naturalWidth !== 0) {
+                // Calculate scaling with zoom factor to eliminate gaps
+                const imageAspect = 1920 / 1080;
+                const canvasAspect = canvas.width / canvas.height;
+                const zoomFactor = 1.6; // Slight increase to eliminate tiny white gap
+                
+                let drawWidth, drawHeight, drawX, drawY;
+                
+                if (canvasAspect > imageAspect) {
+                    // Canvas is wider - fit to height with zoom
+                    drawHeight = canvas.height * zoomFactor;
+                    drawWidth = drawHeight * imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = (canvas.height - drawHeight) / 2;
+                } else {
+                    // Canvas is taller - fit to width with zoom
+                    drawWidth = canvas.width * zoomFactor;
+                    drawHeight = drawWidth / imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = (canvas.height - drawHeight) / 2;
+                }
+                
+                ctx.drawImage(nate2BgImage, drawX, drawY, drawWidth, drawHeight);
+            } else {
+                // Fallback background color
+                ctx.fillStyle = '#f0f8ff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            // Restore transform for virtual rendering
+            const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+            const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+            const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+            
+            // Draw blue header bar with 70% transparency - make it wider
+            ctx.fillStyle = 'rgba(46, 90, 138, 0.7)'; // #2e5a8a with transparency
+            ctx.fillRect(-150, 0, VIRTUAL_WIDTH + 300, 70); // Extended width by 300px total (150px on each side), moved to top
+            
+            // Draw title in header
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Helvetica';
+            ctx.textAlign = 'center';
+            ctx.fillText('Nate needs help identifying an opioid overdose. What are some of the key signs?', 400, 45); // Adjusted Y position for top positioning
+            
+            // Draw options in 2x2 grid
+            for (let i = 0; i < level1.options.length; i++) {
+                let option = level1.options[i];
+                // Draw button - selected items are darker blue, hovered are lighter, unselected are normal blue
+                if (option.selected) {
+                    ctx.fillStyle = 'rgba(25, 48, 74, 0.7)'; // #19304a with transparency
+                } else if (level1.hoveredOption === i) {
+                    ctx.fillStyle = 'rgba(120, 170, 230, 0.7)'; // Lighter blue for hovered with 70% transparency
+                } else {
+                    ctx.fillStyle = 'rgba(25, 48, 74, 0.7)'; // #19304a with transparency
+                }
+                
+                ctx.strokeStyle = 'transparent';
+                ctx.lineWidth = 0;
+                
+                ctx.beginPath();
+                ctx.rect(option.x - option.width/2, option.y - option.height/2, option.width, option.height);
+                ctx.fill();
+                
+                // Draw text
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 16px Helvetica';
+                ctx.textAlign = 'center';
+                ctx.fillText(option.text, option.x, option.y + 6);
+                
+                // Draw checkmark if selected (no indication of correct/wrong)
+                if (option.selected) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 20px Helvetica';
+                    ctx.fillText('✓', option.x + option.width/2 - 20, option.y - option.height/2 + 25);
+                }
+            }
+            
+            // Draw blue footer bar with 70% transparency
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+            ctx.fillRect(0, 520, VIRTUAL_WIDTH, 60);
+            
+            // Draw footer text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Helvetica';
+            ctx.textAlign = 'center';
+            
+            // Check if any options are selected and if there's feedback to show
+            const anySelected = level1.options.some(option => option.selected);
+            let displayText = "";
+            
+            if (feedback.visible && feedback.text) {
+                displayText = feedback.text;
+                // Check if this is a success message (contains "Correct" or "Great")
+                if (feedback.text.includes("Correct") || feedback.text.includes("Great")) {
+                    ctx.fillStyle = '#28a745'; // Green for success
+                } else {
+                    ctx.fillStyle = '#ff5147'; // Red for failure feedback
+                }
+            } else {
+                ctx.fillStyle = '#ffffff';
+                if (anySelected) {
+                    displayText = 'Click here to continue';
+                } else {
+                    displayText = 'Select all that apply';
+                }
+            }
+            
+            ctx.fillText(displayText, 400, 555);
+        }
+
+        // Render Level 1.5 (MCQ)
+function renderLevel1_5() {
+    // Draw Nate 1 bg background image zoomed in to fill gaps
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (nateBgImage.complete && nateBgImage.naturalWidth !== 0) {
+        // Calculate scaling with zoom factor to eliminate gaps
+        const imageAspect = 1920 / 1080;
+        const canvasAspect = canvas.width / canvas.height;
+        const zoomFactor = 1.48; // Slight increase to eliminate tiny white gap
+        
+        let drawWidth, drawHeight, drawX, drawY;
+        
+        if (canvasAspect > imageAspect) {
+            // Canvas is wider - fit to height with zoom
+            drawHeight = canvas.height * zoomFactor;
+            drawWidth = drawHeight * imageAspect;
+            drawX = (canvas.width - drawWidth) / 2 - 150; // Move 150px to the left
+            drawY = (canvas.height - drawHeight) / 2;
+        } else {
+            // Canvas is taller - fit to width with zoom
+            drawWidth = canvas.width * zoomFactor;
+            drawHeight = drawWidth / imageAspect;
+            drawX = (canvas.width - drawWidth) / 2 - 150; // Move 150px to the left
+            drawY = (canvas.height - drawHeight) / 2;
+        }
+        
+        ctx.drawImage(nateBgImage, drawX, drawY, drawWidth, drawHeight);
+    } else {
+        ctx.fillStyle = '#f0f8ff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    
+    const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+    const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+    const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+    ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+    
+    // Draw blue header bar with 70% transparency - make it wider
+    ctx.fillStyle = 'rgba(46, 90, 138, 0.7)'; // #2e5a8a with transparency
+    ctx.fillRect(-150, 0, VIRTUAL_WIDTH + 300, 70); // Extended width by 300px total (150px on each side), moved to top
+    
+    // Draw title in header - use larger font
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 28px Helvetica';
+    ctx.textAlign = 'center';
+    ctx.fillText("Nate thinks that this is an opiod overdose! What should Nate's first action be?", 400, 45); // Adjusted Y position for top positioning
+    
+    // Draw options in 2x2 grid
+    for (let i = 0; i < level1_5.options.length; i++) {
+        let option = level1_5.options[i];
+        if (option.selected) {
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.7)'; // #19304a with transparency
+        } else if (level1_5.hoveredOption === i) {
+            ctx.fillStyle = 'rgba(120, 170, 230, 0.7)'; // Lighter blue for hovered with 70% transparency
+        } else {
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.7)'; // #19304a with transparency
+        }
+        
+        ctx.strokeStyle = 'transparent';
+        ctx.lineWidth = 0;
+        
+        ctx.beginPath();
+        ctx.rect(option.x - option.width/2, option.y - option.height/2, option.width, option.height);
+        ctx.fill();
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px Helvetica';
+        ctx.textAlign = 'center';
+        ctx.fillText(option.text, option.x, option.y + 6);
+        
+        if (option.selected) {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 20px Helvetica';
+            ctx.fillText('✓', option.x + option.width/2 - 20, option.y - option.height/2 + 25);
+        }
+    }
+    
+    // Draw blue footer bar with 70% transparency
+    ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+    ctx.fillRect(0, 520, VIRTUAL_WIDTH, 60);
+    
+    // Draw footer text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 24px Helvetica';
+    ctx.textAlign = 'center';
+    
+    const anySelected = level1_5.options.some(option => option.selected);
+    let displayText = "";
+    
+    if (feedback.visible && feedback.text) {
+        displayText = feedback.text;
+        // Check if this is a success message (contains "Correct" or "Great")
+        if (feedback.text.includes("Correct") || feedback.text.includes("Great")) {
+            ctx.fillStyle = '#28a745'; // Green for success
+        } else {
+            ctx.fillStyle = '#ff5147'; // Red for failure feedback
+        }
+    } else {
+        ctx.fillStyle = '#ffffff';
+        if (anySelected) {
+            displayText = 'Click here to continue';
+        } else {
+            displayText = "Select Nate's first action";
+        }
+    }
+    
+    ctx.fillText(displayText, 400, 555);
+}
+
+        // Render Level 2 (Assembly)
+        function renderLevel2() {
+    // Draw grass background with same scaling as other levels
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+    if (grassBgImage.complete && grassBgImage.naturalWidth !== 0) {
+        // Calculate scaling with zoom factor to eliminate gaps
+        const imageAspect = 1920 / 1080;
+        const canvasAspect = canvas.width / canvas.height;
+        const zoomFactor = 1.5; // Same zoom as other levels
+        
+        let drawWidth, drawHeight, drawX, drawY;
+        
+        if (canvasAspect > imageAspect) {
+            // Canvas is wider - fit to height with zoom
+            drawHeight = canvas.height * zoomFactor;
+            drawWidth = drawHeight * imageAspect;
+            drawX = (canvas.width - drawWidth) / 2;
+            drawY = (canvas.height - drawHeight) / 2;
+        } else {
+            // Canvas is taller - fit to width with zoom
+            drawWidth = canvas.width * zoomFactor;
+            drawHeight = drawWidth / imageAspect;
+            drawX = (canvas.width - drawWidth) / 2;
+            drawY = (canvas.height - drawHeight) / 2;
+        }
+        
+        ctx.drawImage(grassBgImage, drawX, drawY, drawWidth, drawHeight);
+    } else {
+        ctx.fillStyle = '#f0f8ff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    // Restore transform for virtual rendering
+    const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+    const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+    const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+    ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+
+    // Draw kit if not opened
+    if (!level2.kitOpened) {
+        if (kitImage.complete && kitImage.naturalWidth !== 0) {
+            ctx.drawImage(
+                kitImage,
+                level2.kit.x,
+                level2.kit.y,
+                level2.kit.width,
+                level2.kit.height
+            );
+        } else {
+            // fallback if image not loaded yet
+            ctx.fillStyle = '#f5f5dc';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.rect(level2.kit.x, level2.kit.y, level2.kit.width, level2.kit.height);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+            
+    // Draw sachet if kit is opened
+    if (level2.sachet.visible) {
+        // Use sachet2Img if sachet has been opened, otherwise sachetImg
+        let sachetToDraw = level2.sachetOpened ? sachet2Img : sachetImg;
+        if (sachetToDraw.complete && sachetToDraw.naturalWidth !== 0) {
+            ctx.drawImage(
+                sachetToDraw,
+                level2.sachet.x,
+                level2.sachet.y,
+                level2.sachet.width,
+                level2.sachet.height
+            );
+        } else {
+            // fallback if image not loaded yet
+            ctx.fillStyle = '#dedeff';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.rect(level2.sachet.x, level2.sachet.y, level2.sachet.width, level2.sachet.height);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#000000';
+            ctx.font = '14px Arial';
+            ctx.fillText('Needle Sachet', level2.sachet.x + level2.sachet.width/2, level2.sachet.y + level2.sachet.height/2 + 5);
+        }
+    }
+    
+    // Draw syringe if kit is opened
+    if (level2.syringe.visible) {
+        if (syringeImg.complete && syringeImg.naturalWidth !== 0) {
+            ctx.drawImage(
+                syringeImg,
+                level2.syringe.x,
+                level2.syringe.y,
+                level2.syringe.width,
+                level2.syringe.height
+            );
+        } else {
+            // fallback if image not loaded yet
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.rect(level2.syringe.x, level2.syringe.y, level2.syringe.width, level2.syringe.height);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+    
+    // Draw needle if sachet is opened
+    if (level2.needle.visible) {
+        if (needleTipImg.complete && needleTipImg.naturalWidth !== 0) {
+            ctx.drawImage(
+                needleTipImg,
+                level2.needle.x,
+                level2.needle.y,
+                level2.needle.width,
+                level2.needle.height
+            );
+        } else {
+            // fallback if image not loaded yet
+            ctx.fillStyle = '#aaaaaa';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.rect(level2.needle.x, level2.needle.y, level2.needle.width, level2.needle.height);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#000000';
+            ctx.font = '10px Arial';
+            ctx.fillText('Needle', level2.needle.x + level2.needle.width/2, level2.needle.y - 5);
+        }
+    }
+    
+    // Draw assembled syringe
+    if (level2.assembledSyringe.visible) {
+        if (assembledSyringeImg.complete && assembledSyringeImg.naturalWidth !== 0) {
+            ctx.drawImage(
+                assembledSyringeImg,
+                level2.assembledSyringe.x,
+                level2.assembledSyringe.y,
+                level2.assembledSyringe.width,
+                level2.assembledSyringe.height
+            );
+        } else {
+            // fallback if image not loaded yet
+            ctx.fillStyle = '#ddeeff';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.rect(level2.assembledSyringe.x, level2.assembledSyringe.y, level2.assembledSyringe.width, level2.assembledSyringe.height);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#000000';
+            ctx.font = '14px Arial';
+            ctx.fillText('Assembled Syringe with Needle', level2.assembledSyringe.x + level2.assembledSyringe.width/2, level2.assembledSyringe.y + level2.assembledSyringe.height/2 + 5);
+        }
+    }
+    
+    // Draw open case image on the left when kit is opened
+if (level2.kitOpened) {
+    // Example size: match closed case height, but you can adjust as needed
+    const openCaseWidth = 120; // or any width you want
+    const openCaseHeight = 325; // match closed case height for consistency
+    const openCaseX = level2.kit.x - openCaseWidth - 30; // 30px gap to the left of the sachet
+    const openCaseY = level2.kit.y;
+
+    if (openCaseImg.complete && openCaseImg.naturalWidth !== 0) {
+        ctx.drawImage(
+            openCaseImg,
+            openCaseX,
+            openCaseY,
+            openCaseWidth,
+            openCaseHeight
+        );
+    }
+}
+    
+    // Instructions based on current state
+    ctx.fillStyle = '#555555';
+    ctx.font = '16px Helvetica';
+    let instruction = "";
+    if (!level2.kitOpened) {
+        instruction = "Click on the kit to open it";
+    } else if (!level2.sachetOpened) {
+        instruction = "Open the needle sachet first";
+    } else if (!level2.needleAttached) {
+        instruction = "Drag the needle to the syringe (carefully and very slowly!)";
+    }
+
+    // Draw instruction background bar with 70% transparency
+    ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+    ctx.fillRect(0, 520, VIRTUAL_WIDTH, 60);
+
+    // Combine instruction and feedback for the bar
+let displayText = instruction;
+if (feedback.visible && feedback.text) {
+    displayText = feedback.text;
+    // Check if this is a success message (contains "Correct" or "Great")
+    if (feedback.text.includes("Correct") || feedback.text.includes("Great") || feedback.text.includes("attached")) {
+        ctx.fillStyle = '#28a745'; // Green for success
+    } else {
+        ctx.fillStyle = '#ff5147'; // Red for failure feedback
+    }
+} else {
+    ctx.fillStyle = '#ffffff';
+}
+ctx.font = 'bold 24px Helvetica';
+ctx.textAlign = 'center';
+ctx.fillText(displayText, VIRTUAL_WIDTH / 2, 555);
+
+// Draw blue header bar with 70% transparency - make it wider
+ctx.fillStyle = 'rgba(46, 90, 138, 0.7)'; // #2e5a8a with transparency
+ctx.fillRect(-150, 0, VIRTUAL_WIDTH + 300, 70); // Extended width by 300px total (150px on each side), moved to top
+
+// Draw title in header
+ctx.fillStyle = '#ffffff';
+ctx.font = 'bold 28px Helvetica';
+ctx.textAlign = 'center';
+ctx.fillText('Assemble the naloxone kit', 400, 45); // Adjusted Y position for top positioning
+        }
+
+        // Render Level 2.5 (Recovery Position)
+        function renderLevel2_5() {
+            // Draw recovery position background with proper aspect ratio
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+            if (recoveryPositionBgImage.complete && recoveryPositionBgImage.naturalWidth !== 0) {
+                // Use the image's natural aspect ratio with 1.5x zoom
+                const imageAspect = recoveryPositionBgImage.naturalWidth / recoveryPositionBgImage.naturalHeight;
+                const canvasAspect = canvas.width / canvas.height;
+                const zoomFactor = 1.5;
+                
+                let drawWidth, drawHeight, drawX, drawY;
+                
+                if (canvasAspect > imageAspect) {
+                    // Canvas is wider - fit to height with zoom
+                    drawHeight = canvas.height * zoomFactor;
+                    drawWidth = drawHeight * imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = (canvas.height - drawHeight) / 2;
+                } else {
+                    // Canvas is taller - fit to width with zoom
+                    drawWidth = canvas.width * zoomFactor;
+                    drawHeight = drawWidth / imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = (canvas.height - drawHeight) / 2;
+                }
+                
+                ctx.drawImage(recoveryPositionBgImage, drawX, drawY, drawWidth, drawHeight);
+            } else {
+                ctx.fillStyle = '#f0f8ff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Restore transform for virtual rendering
+            const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+            const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+            const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+            
+            // Draw blue header bar with 70% transparency - make it wider
+            ctx.fillStyle = 'rgba(46, 90, 138, 0.7)'; // #2e5a8a with transparency
+            ctx.fillRect(-150, 0, VIRTUAL_WIDTH + 300, 70); // Extended width by 300px total (150px on each side), moved to top
+            
+            // Draw title in header
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Helvetica';
+            ctx.textAlign = 'center';
+            ctx.fillText('Nate is going to put her in the recovery position.', 400, 45); // Adjusted Y position for top positioning
+            
+            // Draw blue footer bar with 70% transparency - make it wider
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+            ctx.fillRect(0, 520, VIRTUAL_WIDTH, 60); // Standard width like Level 1
+            
+            // Draw footer text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Helvetica';
+            ctx.textAlign = 'center';
+            
+            let displayText = 'Click to continue';
+            if (feedback.visible && feedback.text) {
+                displayText = feedback.text;
+                ctx.fillStyle = '#ff5147'; // Strong red for feedback
+            }
+            
+            ctx.fillText(displayText, 400, 555);
+        }
+
+        // Render Level 3 (Injection Site Selection)
+        function renderLevel3() {
+            // Draw Jules body background with 1920x1080 aspect ratio, with 1.5x zoom
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+            if (julesBodyBgImage.complete && julesBodyBgImage.naturalWidth !== 0) {
+                // Use 1920x1080 aspect ratio with 1.5x zoom, centered on canvas
+                const targetAspect = 1920 / 1080;
+                const canvasAspect = canvas.width / canvas.height;
+                const zoomFactor = 1.5;
+                
+                let drawWidth, drawHeight, drawX, drawY;
+                
+                if (canvasAspect > targetAspect) {
+                    // Canvas is wider - fit to height with zoom
+                    drawHeight = canvas.height * zoomFactor;
+                    drawWidth = drawHeight * targetAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    drawY = (canvas.height - drawHeight) / 2;
+                } else {
+                    // Canvas is taller - fit to width with zoom
+                    drawWidth = canvas.width * zoomFactor;
+                    drawHeight = drawWidth / targetAspect;
+                    drawX = 0;
+                    drawY = (canvas.height - drawHeight) / 2;
+                }
+                
+                ctx.drawImage(julesBodyBgImage, drawX, drawY, drawWidth, drawHeight);
+            } else {
+                ctx.fillStyle = '#f0f8ff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            // Restore transform for virtual rendering
+            const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+            const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+            const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+            
+            // Draw blue header bar (moved higher) with 70% transparency - make it wider
+            ctx.fillStyle = 'rgba(46, 90, 138, 0.7)'; // #2e5a8a with transparency
+            ctx.fillRect(-150, 0, VIRTUAL_WIDTH + 300, 50); // Extended width by 300px total (150px on each side), kept height at 50
+            
+            // Draw title in header
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Helvetica';
+            ctx.textAlign = 'center';
+            ctx.fillText('Choose where Nate should inject Naloxone', 400, 35);
+            
+            // Draw all injection site boxes (always visible)
+            for (let site of level3.injectionSites) {
+                ctx.save();
+                
+                // Determine color based on hover state
+                if (level3.hoveredPart === site.name) {
+                    // Hovered state - blue color
+                    ctx.shadowColor = '#0066ff';
+                    ctx.shadowBlur = 15;
+                    ctx.fillStyle = 'rgba(0, 102, 255, 0.4)';
+                } else {
+                    // Default state - orange color
+                    ctx.shadowColor = '#ff8800';
+                    ctx.shadowBlur = 8;
+                    ctx.fillStyle = 'rgba(255, 136, 0, 0.3)';
+                }
+                
+                // Draw the box
+                ctx.fillRect(site.x - site.width/2, site.y - site.height/2, site.width, site.height);
+                
+                // Draw part name above the area if hovered
+                if (level3.hoveredPart === site.name) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 3;
+                    ctx.font = 'bold 18px Helvetica';
+                    ctx.textAlign = 'center';
+                    ctx.strokeText(site.name, site.x, site.y - site.height/2 - 10);
+                    ctx.fillText(site.name, site.x, site.y - site.height/2 - 10);
+                }
+                
+                ctx.restore();
+            }
+            
+            // Draw blue footer bar with 70% transparency
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+            ctx.fillRect(0, 520, VIRTUAL_WIDTH, 60);
+            
+            // Draw footer text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Helvetica';
+            ctx.textAlign = 'center';
+            
+            let displayText = 'Hover over body parts and click on a muscle to inject';
+            if (feedback.visible && feedback.text) {
+                displayText = feedback.text;
+                // Check if this is a success message (contains "Correct" or "Great")
+                if (feedback.text.includes("Correct") || feedback.text.includes("Great") || feedback.text.includes("perfect")) {
+                    ctx.fillStyle = '#28a745'; // Green for success
+                } else {
+                    ctx.fillStyle = '#ff5147'; // Red for failure feedback
+                }
+            }
+            
+            ctx.fillText(displayText, 400, 555);
+        }
+
+        // Mouse event handlers
+        function handleMouseMove(e) {
+            const pos = getVirtualMousePos(e);
+            mouse.x = pos.x;
+            mouse.y = pos.y;
+            
+            // Check for hover effects on Level 1
+            if (currentState === GameState.LEVEL_1) {
+                level1.hoveredOption = null;
+                for (let i = 0; i < level1.options.length; i++) {
+                    let option = level1.options[i];
+                    if (isPointInRect(mouse.x, mouse.y, 
+                        option.x - option.width/2, 
+                        option.y - option.height/2, 
+                        option.width, option.height)) {
+                        level1.hoveredOption = i;
+                        break;
+                    }
+                }
+            }
+            
+            // Check for hover effects on Level 1.5
+            if (currentState === GameState.LEVEL_1_5) {
+                level1_5.hoveredOption = null;
+                for (let i = 0; i < level1_5.options.length; i++) {
+                    let option = level1_5.options[i];
+                    if (isPointInRect(mouse.x, mouse.y, 
+                        option.x - option.width/2, 
+                        option.y - option.height/2, 
+                        option.width, option.height)) {
+                        level1_5.hoveredOption = i;
+                        break;
+                    }
+                }
+            }
+            
+            // Check for hover effects on Level 3
+            if (currentState === GameState.LEVEL_3) {
+                let previousHovered = level3.hoveredPart;
+                level3.hoveredPart = null;
+                
+                // Check if mouse is over any injection site
+                for (let site of level3.injectionSites) {
+                    if (isPointInRect(mouse.x, mouse.y, 
+                        site.x - site.width/2, 
+                        site.y - site.height/2, 
+                        site.width, site.height)) {
+                        level3.hoveredPart = site.name;
+                        break;
+                    }
+                }
+            }
+            
+            // Check for hover effects on Level 5
+            if (currentState === GameState.LEVEL_5 && !level5.waiting && !level5.patientAwake) {
+                level5.hoveredOption = null;
+                for (let i = 0; i < level5.options.length; i++) {
+                    let option = level5.options[i];
+                    if (isPointInRect(mouse.x, mouse.y, 
+                        option.x - option.width/2, 
+                        option.y - option.height/2, 
+                        option.width, option.height)) {
+                        level5.hoveredOption = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        function handleMouseDown(e) {
+            const pos = getVirtualMousePos(e);
+            mouse.x = pos.x;
+            mouse.y = pos.y;
+            mouse.isDown = true;
+            
+            switch(currentState) {
+                case GameState.START:
+                    checkStartClick();
+                    break;
+                    
+                case GameState.LEVEL_0_5: // Add this case
+                    checkLevel0_5Click();
+                    break;
+                    
+                case GameState.LEVEL_1:
+                    checkLevel1Selection();
+                    break;
+                
+                case GameState.LEVEL_1_5:
+                    checkLevel1_5Selection();
+                    break;
+    
+                case GameState.LEVEL_2:
+                    checkLevel2Interaction();
+                    break;
+
+                case GameState.LEVEL_2_5:
+                    checkLevel2_5Click();
+                    break;
+
+                case GameState.LEVEL_3:
+                    checkLevel3Selection();
+                    break;
+                
+                case GameState.LEVEL_4:
+                    checkLevel4Interaction();
+                    break;
+                
+                case GameState.LEVEL_5:
+                    if (!level5.waiting && !level5.patientAwake) {
+                        checkLevel5Selection();
+                    }
+                    break;
+            }
+        }
+
+        function handleMouseUp(e) {
+            mouse.isDown = false;
+            if (currentState === GameState.LEVEL_2) {
+                level2.needle.isDragging = false;
+            }
+            if (currentState === GameState.LEVEL_4) {
+                level4.dragging = false;
+                level4.injectionHeld = false;
+            }
+        }
+
+        // Render Completion Screen
+        function renderCompletion() {
+            // Draw final background with same scaling as recovered bg
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+            if (finalBgImage.complete && finalBgImage.naturalWidth !== 0) {
+                // Use 1920x1080 aspect ratio with 1.5x zoom, same as recovered bg
+                const imageAspect = 1920 / 1080;
+                const canvasAspect = canvas.width / canvas.height;
+                const zoomFactor = 1.5;
+                
+                let drawWidth, drawHeight, drawX, drawY;
+                
+                if (canvasAspect > imageAspect) {
+                    // Canvas is wider - fit to height with zoom
+                    drawHeight = canvas.height * zoomFactor;
+                    drawWidth = drawHeight * imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    // Move down to show more of the top (same as recovered bg)
+                    drawY = (canvas.height - drawHeight) / 2 + canvas.height * 0.15;
+                } else {
+                    // Canvas is taller - fit to width with zoom
+                    drawWidth = canvas.width * zoomFactor;
+                    drawHeight = drawWidth / imageAspect;
+                    drawX = (canvas.width - drawWidth) / 2;
+                    // Move down to show more of the top (same as recovered bg)
+                    drawY = (canvas.height - drawHeight) / 2 + canvas.height * 0.15;
+                }
+                
+                ctx.drawImage(finalBgImage, drawX, drawY, drawWidth, drawHeight);
+            } else {
+                // Fallback background color
+                ctx.fillStyle = '#f0f8ff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Restore transform for virtual rendering (keeping this for potential future UI elements)
+            const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+            const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+            const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+        }
+
+        // Check click on start screen
+        function checkStartClick() {
+            // Check if clicking on blue bottom bar
+            if (mouse.y >= 520 && mouse.y <= 580) {
+                currentState = GameState.LEVEL_0_5; // Changed from LEVEL_1 to LEVEL_0_5
+            }
+        }
+
+        // Check click on level 0.5 screen
+        function checkLevel0_5Click() {
+            // Check if clicking on blue bottom bar
+            if (mouse.y >= 520 && mouse.y <= 580) {
+                currentState = GameState.LEVEL_1;
+            }
+        }
+
+        // Check click on level 2.5 screen
+        function checkLevel2_5Click() {
+            // Check if clicking on blue bottom bar
+            if (mouse.y >= 520 && mouse.y <= 580) {
+                currentState = GameState.LEVEL_3;
+            }
+        }
+
+        // Check which option was selected in Level 1
+        function checkLevel1Selection() {
+            // Check if clicking on footer bar to continue
+            if (mouse.y >= 520 && mouse.y <= 580) {
+                const anySelected = level1.options.some(option => option.selected);
+                if (!anySelected) {
+                    showFeedback("Please select at least one option first!");
+                    setTimeout(() => {
+                        hideFeedback();
+                    }, 2000);
+                    return;
+                }
+                
+                // Prevent submitting if already submitted
+                if (level1.answerSubmitted) {
+                    return;
+                }
+                
+                // Mark answer as submitted
+                level1.answerSubmitted = true;
+                
+                // Check if they got the correct combination
+                const correctSelected = level1.options.filter(option => option.correct && option.selected).length;
+                const incorrectSelected = level1.options.filter(option => !option.correct && option.selected).length;
+                const hasCorrectCombination = correctSelected === 2 && incorrectSelected === 0;
+                
+                if (hasCorrectCombination) {
+                    showFeedback("Correct! You identified the right signs of overdose.");
+                    setTimeout(() => {
+                        showFeedback("Great job! Moving to next question...");
+                        setTimeout(() => {
+                            currentState = GameState.LEVEL_1_5; // Changed from LEVEL_2 to LEVEL_1_5
+                            hideFeedback();
+                        }, 1500);
+                    }, 1500);
+                } else {
+                    showFeedback("Incorrect selection. One or more answers are wrong. Try again.");
+                    attempts++;
+                    localStorage.setItem('naloxone_attempts', attempts);
+                    setTimeout(() => {
+                        resetLevel1();
+                        resetLevel1_5(); // Add this line
+                        hideFeedback();
+                        resetLevel2();
+                        resetLevel4();
+                        currentState = GameState.START; // Changed from LEVEL_1 to START
+                    }, 3000);
+                }
+                return;
+            }
+            
+            // Prevent selecting options if answer already submitted
+            if (level1.answerSubmitted) {
+                return;
+            }
+            
+            // Check option selections (just toggle, no feedback about correctness)
+            for (let option of level1.options) {
+                if (isPointInRect(mouse.x, mouse.y, 
+                    option.x - option.width/2, 
+                    option.y - option.height/2, 
+                    option.width, option.height)) {
+                    
+                    // Toggle selection
+                    option.selected = !option.selected;
+                    break;
+                }
+            }
+        }
+
+        // Check which option was selected in Level 1.5
+        function checkLevel1_5Selection() {
+            // Prevent clicking if answer already submitted
+            if (level1_5.answerSubmitted) {
+                return;
+            }
+            
+            // Check option selections (immediate feedback, single selection only)
+            for (let option of level1_5.options) {
+                if (isPointInRect(mouse.x, mouse.y, 
+                    option.x - option.width/2, 
+                    option.y - option.height/2, 
+                    option.width, option.height)) {
+                    
+                    // Clear all selections first (single selection only)
+                    level1_5.options.forEach(opt => opt.selected = false);
+                    
+                    // Select this option
+                    option.selected = true;
+                    
+                    // Mark answer as submitted to prevent further clicks
+                    level1_5.answerSubmitted = true;
+                    
+                    // Provide immediate feedback
+                    if (option.correct) {
+                        showFeedback("Correct! Nate will call 999 first, then use Naloxone.");
+                        setTimeout(() => {
+                            showFeedback("Great job! Moving to Naloxone preparation...");
+                            setTimeout(() => {
+                                currentState = GameState.LEVEL_2;
+                                hideFeedback();
+                            }, 1500);
+                        }, 1500);
+                    } else {
+                        showFeedback("Incorrect! That is not the first action Nate should take.");
+                        attempts++;
+                        localStorage.setItem('naloxone_attempts', attempts);
+                        setTimeout(() => {
+                            resetLevel1();
+                            resetLevel1_5();
+                            hideFeedback();
+                            currentState = GameState.START; // Changed from LEVEL_1 to START
+                        }, 3000);
+                    }
+                    
+                    break;
+                }
+            }
+        }
+
+        // Check interactions in Level 2
+        function checkLevel2Interaction() {
+            // Check if kit was clicked
+            if (!level2.kitOpened && isPointInRect(mouse.x, mouse.y, 
+                level2.kit.x, level2.kit.y, 
+                level2.kit.width, level2.kit.height)) {
+                
+                level2.kitOpened = true;
+                level2.sachet.visible = true;
+                level2.syringe.visible = true;
+                return;
+            }
+            
+            // Check if sachet was clicked
+            if (level2.sachet.visible && !level2.sachetOpened && 
+                isPointInRect(mouse.x, mouse.y, 
+                level2.sachet.x, level2.sachet.y, 
+                level2.sachet.width, level2.sachet.height)) {
+                
+                level2.sachetOpened = true;
+                level2.needle.visible = true;
+                level2.canDragNeedle = true;
+                return;
+            }
+            
+            // Check if syringe was clicked before sachet opened
+            if (level2.syringe.visible && !level2.sachetOpened && 
+                isPointInRect(mouse.x, mouse.y, 
+                level2.syringe.x, level2.syringe.y, 
+                level2.syringe.width, level2.syringe.height)) {
+                
+                showFeedback("You need to open the needle sachet first!");
+                setTimeout(hideFeedback, 2000);
+                return;
+            }
+            
+            // Check if needle was clicked for dragging
+            if (level2.needle.visible && level2.canDragNeedle && 
+                isPointInRect(mouse.x, mouse.y, 
+                level2.needle.x, level2.needle.y, 
+                level2.needle.width, level2.needle.height)) {
+                
+                level2.needle.isDragging = true;
+                return;
+            }
+        }
+
+        function checkLevel3Selection() {
+            // Prevent selecting if answer already submitted
+            if (level3.answerSubmitted) {
+                return;
+            }
+            
+            for (let site of level3.injectionSites) {
+                if (isPointInRect(mouse.x, mouse.y, 
+                    site.x - site.width/2, 
+                    site.y - site.height/2, 
+                    site.width, site.height)) {
+                    
+                    // Mark answer as submitted to prevent further clicks
+                    level3.answerSubmitted = true;
+                    
+                    if (site.correct) {
+                        // Store the selected site
+                        level3.selectedSite = site.name;
+                        
+                        // Correct site
+                        showFeedback(`Correct! The ${site.name.toLowerCase()} is a good major muscle for injection.`);
+                        setTimeout(() => {
+                            showFeedback("Great choice! Moving to dosage stage...");
+                            setTimeout(() => {
+                                currentState = GameState.LEVEL_4;
+                                hideFeedback();
+                            }, 1500);
+                        }, 1500);
+                    } else {
+                        // Wrong site
+                        showFeedback(`Incorrect! The ${site.name.toLowerCase()} is not a suitable injection site.`);
+                        attempts++;
+                        localStorage.setItem('naloxone_attempts', attempts);
+                        setTimeout(() => {
+                            resetLevel1();
+                            resetLevel1_5();
+                            resetLevel3(); // Add reset for level 3
+                            hideFeedback();
+                            resetLevel2();
+                            resetLevel4();
+                            currentState = GameState.START; // Changed from LEVEL_1 to START
+                        }, 2000);
+                    }
+                    
+                    break;
+                }
+            }
+        }
+
+        // Check interactions in Level 4
+        function checkLevel4Interaction() {
+            // Check if inject button was clicked
+            if (!level4.injectionStarted && !level4.injectionComplete && 
+                isPointInRect(mouse.x, mouse.y, 
+                level4.injectButton.x - level4.injectButton.width/2, 
+                level4.injectButton.y - level4.injectButton.height/2, 
+                level4.injectButton.width, level4.injectButton.height)) {
+                
+                level4.injectionStarted = true;
+                level4.injectionHeld = true;
+                level4.injectionTimer = 0;
+                return;
+            }
+            
+            // Check if selector knob was clicked
+            if (isPointInRect(mouse.x, mouse.y, 
+                level4.selectorKnob.x, level4.selectorKnob.y, 
+                level4.selectorKnob.width, level4.selectorKnob.height)) {
+                
+                level4.dragging = true;
+                return;
+            }
+            
+            // Check if selector track was clicked
+            if (isPointInRect(mouse.x, mouse.y, 
+                level4.selector.x, level4.selector.y, 
+                level4.selector.width, level4.selector.height)) {
+                
+                // Calculate position based on click location
+                let newPos = (mouse.x - level4.selector.x) / level4.selector.width;
+                newPos = Math.max(0, Math.min(1, newPos));
+                level4.selectedPosition = Math.floor(newPos * 5);
+                
+                // Ensure we don't go beyond position 5 (index 4)
+                if (level4.selectedPosition > 4) {
+                    level4.selectedPosition = 4;
+                }
+                
+                // Update knob position
+                level4.selectorKnob.x = level4.selector.x + (level4.selector.width * (level4.selectedPosition / 4)) - (level4.selectorKnob.width / 2);
+                return;
+            }
+        }
+
+        // Check option selection in Level 5
+        function checkLevel5Selection() {
+            for (let option of level5.options) {
+                if (isPointInRect(mouse.x, mouse.y, 
+                    option.x - option.width/2, 
+                    option.y - option.height/2, 
+                    option.width, option.height)) {
+                    
+                    if (option.correct) {
+                        // Correct option - wait 2-3 minutes
+                        // Increment the dose counter immediately since we're administering another dose
+                        level5.attempts++;
+                        showFeedback("Correct! Check if she improves in 2-3 minutes, before giving another dose.");
+                        level5.waiting = true;
+                        level5.waitingTimer = 0;
+                    } else {
+                        // Wrong option - inject again immediately
+                        showFeedback("You should wait 2-3 minutes before using Naloxone again!");
+                        attempts++;
+                        localStorage.setItem('naloxone_attempts', attempts);
+setTimeout(() => {
+    resetLevel1();
+    resetLevel1_5(); // Add this line
+    hideFeedback();
+    resetLevel2();
+    resetLevel4(); // <-- Add this line
+    currentState = GameState.START; // Changed from LEVEL_1 to START
+}, 2000);
+                    }
+                    
+                    break;
+                }
+            }
+        }
+
+        // Reset Level 1 to initial state
+        function resetLevel1() { 
+            for (let option of level1.options) {
+                option.selected = false;
+            }
+            level1.answerSubmitted = false; // Reset the submission flag
+            hideFeedback();
+        }
+
+        // Reset Level 1.5 to initial state
+function resetLevel1_5() {
+    for (let option of level1_5.options) {
+        option.selected = false;
+    }
+    level1_5.answerSubmitted = false; // Reset the submission flag
+    hideFeedback();
+}
+
+        // Reset Level 2 to initial state
+        function resetLevel2() {
+            level2 = {
+                kitOpened: false,
+                sachetOpened: false,
+                needleVisible: false,
+                needleAttached: false,
+                needleBroken: false,
+                canDragNeedle: false,
+                dragSpeed: 0,
+                
+                kit: { x: 100, y: 200, width: 120, height: 325 }, // 1.5x bigger, correct aspect ratio for "case 1"
+                sachet: { x: 120, y: 200, width: 184, height: 200, visible: false }, // width = height * 0.92
+                syringe: { x: 550, y: 270, width: 250, height: 115, visible: false },
+                needle: { x: 140, y: 320, width: 320, height: 100, visible: false, isDragging: false }, // Move needle left
+                assembledSyringe: { x: 400, y: 300, width: 400, height: 102, visible: false }
+            };
+            
+            hideFeedback();
+        }
+
+        // Reset Level 3 to initial state
+        function resetLevel3() {
+            level3.hoveredPart = null;
+            level3.selectedSite = null;
+            level3.answerSubmitted = false; // Reset the submission flag
+            hideFeedback();
+        }
+
+        // Reset Level 4 to initial state
+        function resetLevel4() {
+            level4.selectedPosition = 0;
+            level4.dragging = false;
+            level4.injectionComplete = false;
+            level4.injectionTimer = 0;
+            level4.injectionStarted = false;
+            level4.injectionHeld = false;
+            level4.selectorKnob.x = level4.selector.x - (level4.selectorKnob.width / 2);
+            level4.overlayAlpha = 0;
+        }
+
+        // Utility functions
+        function isPointInRect(x, y, rectX, rectY, rectWidth, rectHeight) {
+            return x >= rectX && x <= rectX + rectWidth && 
+                   y >= rectY && y <= rectY + rectHeight;
+        }
+        
+        function isOverlapping(obj1, obj2) {
+            // Shrink hitboxes to 60% of their size, centered
+            const shrink = 0.2; // 20% margin on each side
+            const o1x = obj1.x + obj1.width * shrink;
+            const o1y = obj1.y + obj1.height * shrink;
+            const o1w = obj1.width * (1 - 2 * shrink);
+            const o1h = obj1.height * (1 - 2 * shrink);
+
+            const o2x = obj2.x + obj2.width * shrink;
+            const o2y = obj2.y + obj2.height * shrink;
+            const o2w = obj2.width * (1 - 2 * shrink);
+            const o2h = obj2.height * (1 - 2 * shrink);
+
+            return o1x < o2x + o2w &&
+                   o1x + o1w > o2x &&
+                   o1y < o2y + o2h &&
+                   o1y + o1h > o2y;
+        }
+
+        function showFeedback(text) {
+            feedback.visible = true;
+            feedback.text = text;
+        }
+        
+        function hideFeedback() {
+            feedback.visible = false;
+            feedback.text = "";
+        }
+
+        function resizeCanvas() {
+       canvas.width = window.innerWidth;
+       canvas.height = window.innerHeight;
+   }
+   window.addEventListener('resize', resizeCanvas);
+   resizeCanvas();
+        // Start the game
+        window.onload = init;
+
+        function getVirtualMousePos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+    const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+    const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+    return {
+        x: (e.clientX - rect.left - offsetX) / scale,
+        y: (e.clientY - rect.top - offsetY) / scale
+    };
+}
+const kitImage = new Image();
+kitImage.src = 'Assets/case 1.webp';
+const grassBgImage = new Image();
+grassBgImage.src = 'Assets/grass bg.webp';
+const nateBgImage = new Image();
+nateBgImage.src = 'Assets/Nate 1 bg.webp';
+const nate2BgImage = new Image();
+nate2BgImage.src = 'Assets/Nate 2 bg.webp';
+const syringeImg = new Image();
+syringeImg.src = 'Assets/needle 1.webp';
+const sachetImg = new Image();
+sachetImg.src = 'Assets/sachet 1.webp';
+const needleTipImg = new Image();
+needleTipImg.src = 'Assets/tip 1.webp';
+const assembledSyringeImg = new Image();
+assembledSyringeImg.src = 'Assets/needle 2.webp';
+const sachet2Img = new Image();
+sachet2Img.src = 'Assets/sachet 2.webp';
+const openCaseImg = new Image();
+openCaseImg.src = 'Assets/case 2.webp';
+const naloxoneImg = new Image();
+naloxoneImg.src = 'Assets/naloxone 1.webp';
+const naloxone2Img = new Image();
+naloxone2Img.src = 'Assets/naloxone 2.webp';
+const julesBodyBgImage = new Image();
+julesBodyBgImage.src = 'Assets/jules body bg.webp';
+const julesThighBgImage = new Image();
+julesThighBgImage.src = 'Assets/Jules thigh bg.webp';
+const julesArmBgImage = new Image();
+julesArmBgImage.src = 'Assets/Jules arm bg.webp';
+const nateCheckUpBgImage = new Image();
+nateCheckUpBgImage.src = 'Assets/Nate check up bg.webp';
+const nateRescueBgImage = new Image();
+nateRescueBgImage.src = 'Assets/Nate reuse bg.webp';
+const recoveredBgImage = new Image();
+recoveredBgImage.src = 'Assets/recovered bg.webp';
+const finalBgImage = new Image();
+finalBgImage.src = 'Assets/final 1 bg.webp';
+const recoveryPositionBgImage = new Image();
+recoveryPositionBgImage.src = 'Assets/recovery position bg.webp';
+const mainBgImage = new Image();
+mainBgImage.src = 'Assets/main bg.webp';
+const scenarioBgImage = new Image();
+scenarioBgImage.src = 'Assets/scenario bg.webp';
+const bgImg = new Image();
+bgImg.src = 'Assets/bg.webp'; // Fixed typo: Assets not Assests
+
+// Render Level 4 (Dosage Selection)  
+function renderLevel4() {
+    // Draw background based on selected injection site
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+    
+    let backgroundImage;
+    if (level3.selectedSite === "Thigh") {
+        backgroundImage = julesThighBgImage;
+    } else if (level3.selectedSite === "Upper arm/Shoulder") {
+        backgroundImage = julesArmBgImage;
+    } else {
+        // Fallback to thigh if no site selected
+        backgroundImage = julesThighBgImage;
+    }
+    
+    if (backgroundImage.complete && backgroundImage.naturalWidth !== 0) {
+        // Use 1920x1080 aspect ratio with zoom, centered on canvas
+        const imageAspect = 1920 / 1080;
+        const canvasAspect = canvas.width / canvas.height;
+        const zoomFactor = 1.5;
+        
+        let drawWidth, drawHeight, drawX, drawY;
+        
+        if (canvasAspect > imageAspect) {
+            // Canvas is wider - fit to height with zoom
+            drawHeight = canvas.height * zoomFactor;
+            drawWidth = drawHeight * imageAspect;
+            drawX = (canvas.width - drawWidth) / 2;
+            drawY = (canvas.height - drawHeight) / 2;
+        } else {
+            // Canvas is taller - fit to width with zoom
+            drawWidth = canvas.width * zoomFactor;
+            drawHeight = drawWidth / imageAspect;
+            drawX = (canvas.width - drawWidth) / 2;
+            drawY = (canvas.height - drawHeight) / 2;
+        }
+        
+        ctx.drawImage(backgroundImage, drawX, drawY, drawWidth, drawHeight);
+    } else {
+        ctx.fillStyle = '#f0f8ff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    
+    // Restore transform for virtual rendering
+    const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+    const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+    const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+    ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+    
+    // Draw blue header bar with 70% transparency - make it wider
+    ctx.fillStyle = 'rgba(46, 90, 138, 0.7)'; // #2e5a8a with transparency
+    ctx.fillRect(-150, 0, VIRTUAL_WIDTH + 300, 70); // Extended width by 300px total (150px on each side), moved to top
+    
+    // Draw title in header
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 28px Helvetica';
+    ctx.textAlign = 'center';
+    ctx.fillText('How many Doses should he administer, when he first injects?', 400, 45); // Adjusted Y position for top positioning
+    
+    // Draw naloxone device with numbers
+    let naloxoneImageToUse = level4.injectionStarted || level4.injectionComplete ? naloxone2Img : naloxoneImg;
+    
+    // Calculate dimensions based on which image we're using
+    let imageWidth, imageHeight, imageY;
+    if (naloxoneImageToUse === naloxone2Img) {
+        imageWidth = 600;
+       
+        imageHeight = Math.round(600 / 3.51);
+        imageY = level4.naloxone.y + (195 - imageHeight) / 2;
+    } else {
+        imageWidth = 600;
+        imageHeight = 195;
+        imageY = level4.naloxone.y;
+    }
+    
+    if (naloxoneImageToUse.complete && naloxoneImageToUse.naturalWidth !== 0) {
+        ctx.drawImage(naloxoneImageToUse, level4.naloxone.x, imageY, imageWidth, imageHeight);
+    }
+    
+    // Draw selector
+    ctx.fillStyle = '#cccccc';
+    ctx.fillRect(level4.selector.x, level4.selector.y, level4.selector.width, level4.selector.height);
+    
+    // Draw selector knob
+    ctx.fillStyle = '#4c86d3';
+    ctx.fillRect(level4.selectorKnob.x, level4.selectorKnob.y, level4.selectorKnob.width, level4.selectorKnob.height);
+    
+    // Draw position labels
+    ctx.fillStyle = '#000000';
+    ctx.font = '18px Helvetica';
+    ctx.textAlign = 'center';
+    for (let i = 0; i < 5; i++) {
+        let x = level4.selector.x + (level4.selector.width * i / 4);
+        ctx.fillText((5 - i).toString(), x, level4.selector.y + 80);
+    }
+    
+    // Display selected position in a dark blue box
+    const selectedPosText = 'Number of Dose: ' + (5 - level4.selectedPosition);
+    const boxWidth = 220;
+    const boxHeight = 40;
+    const boxX = 400 - boxWidth/2;
+    const boxY = 280; // Moved higher from 320 to 280
+    
+    // Draw dark blue background box
+    ctx.fillStyle = 'rgba(25, 48, 74, 0.7)'; // Dark blue with 70% opacity
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    
+    // Draw white bold text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px Helvetica';
+    ctx.textAlign = 'center';
+    ctx.fillText(selectedPosText, 400, boxY + 26);
+    
+    // Draw inject button
+    if (!level4.injectionStarted && !level4.injectionComplete) {
+        ctx.fillStyle = 'rgba(220, 53, 69, 0.7)'; // Red with 70% transparency
+        ctx.fillRect(level4.injectButton.x - level4.injectButton.width/2, 
+                level4.injectButton.y - level4.injectButton.height/2, 
+                level4.injectButton.width, level4.injectButton.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '20px Helvetica';
+        ctx.fillText('INJECT', level4.injectButton.x, level4.injectButton.y + 6);
+    }
+    
+    // Draw footer with 70% transparency
+    ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+    ctx.fillRect(0, 520, VIRTUAL_WIDTH, 60);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 24px Helvetica';
+    ctx.textAlign = 'center';
+    
+    let displayText = 'Drag the selector to any position, then click INJECT';
+    if (feedback.visible && feedback.text) {
+        displayText = feedback.text;
+        // Check if this is a success message (contains "Correct" or "Great")
+        if (feedback.text.includes("Correct") || feedback.text.includes("Great") || feedback.text.includes("successful")) {
+            ctx.fillStyle = '#28a745'; // Green for success
+        } else {
+            ctx.fillStyle = '#ff5147'; // Red for failure feedback
+        }
+    }
+    
+    ctx.fillText(displayText, 400, 555);
+}
+
+// Render Level 5 (Monitoring & Repeat)
+function renderLevel5() {
+    // Choose background based on patient state
+    let backgroundImage;
+    if (level5.patientAwake) {
+        backgroundImage = recoveredBgImage; // Use recovered bg when patient is responding
+    } else if (level5.waiting) {
+        backgroundImage = nateRescueBgImage;
+    } else {
+        backgroundImage = nateCheckUpBgImage;
+    }
+    
+    // Draw background with proper 1920x1080 aspect ratio
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for background
+    if (backgroundImage.complete && backgroundImage.naturalWidth !== 0) {
+        // Use 1920x1080 aspect ratio with 1.5x zoom, same as other levels
+        const imageAspect = 1920 / 1080;
+        const canvasAspect = canvas.width / canvas.height;
+        const zoomFactor = 1.5;
+        
+        let drawWidth, drawHeight, drawX, drawY;
+        
+        if (canvasAspect > imageAspect) {
+            // Canvas is wider - fit to height with zoom
+            drawHeight = canvas.height * zoomFactor;
+            drawWidth = drawHeight * imageAspect;
+            drawX = (canvas.width - drawWidth) / 2;
+            // For recovered bg, move down to show more of the top
+            if (backgroundImage === recoveredBgImage) {
+                drawY = (canvas.height - drawHeight) / 2 + canvas.height * 0.15;
+            } else {
+                drawY = (canvas.height - drawHeight) / 2;
+            }
+        } else {
+            // Canvas is taller - fit to width with zoom
+            drawWidth = canvas.width * zoomFactor;
+            drawHeight = drawWidth / imageAspect;
+            drawX = (canvas.width - drawWidth) / 2;
+            // For recovered bg, move down to show more of the top
+            if (backgroundImage === recoveredBgImage) {
+                drawY = (canvas.height - drawHeight) / 2 + canvas.height * 0.15;
+            } else {
+                drawY = (canvas.height - drawHeight) / 2;
+            }
+        }
+        
+        ctx.drawImage(backgroundImage, drawX, drawY, drawWidth, drawHeight);
+    } else {
+        ctx.fillStyle = '#f0f8ff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    
+    // Restore transform for virtual rendering
+    const scale = Math.min(canvas.width / VIRTUAL_WIDTH, canvas.height / VIRTUAL_HEIGHT);
+    const offsetX = (canvas.width - VIRTUAL_WIDTH * scale) / 2;
+    const offsetY = (canvas.height - VIRTUAL_HEIGHT * scale) / 2;
+    ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+    
+    // Draw blue header bar with 70% transparency - make it wider
+    ctx.fillStyle = 'rgba(46, 90, 138, 0.7)'; // #2e5a8a with transparency
+    ctx.fillRect(-150, 0, VIRTUAL_WIDTH + 300, 70); // Extended width by 300px total (150px on each side), moved to top
+    
+    // Draw title in header
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 28px Helvetica';
+    ctx.textAlign = 'center';
+    
+    if (level5.patientAwake) {
+        ctx.fillText('Success! She is responding.', 400, 45); // Adjusted Y position for top positioning
+        
+        // Draw blue footer bar with 70% transparency - make it wider
+        ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+        ctx.fillRect(-150, 520, VIRTUAL_WIDTH + 300, 60); // Extended width by 300px total (150px on each side), back to height 60
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 24px Helvetica';
+        ctx.textAlign = 'center';
+        
+        let displayText = 'Training Complete! You saved a life!';
+        if (feedback.visible && feedback.text) {
+            displayText = feedback.text;
+            // Check if this is a success message (contains "Correct" or "Great")
+            if (feedback.text.includes("Correct") || feedback.text.includes("Great") || feedback.text.includes("successful")) {
+                ctx.fillStyle = '#28a745'; // Green for success
+            } else if (feedback.text.includes("still not responding")) {
+                ctx.fillStyle = '#ff8c00'; // Amber/Orange for waiting message
+            } else {
+                ctx.fillStyle = '#ff5147'; // Red for failure feedback
+            }
+        }
+        
+        ctx.fillText(displayText, 400, 555);
+    } else {
+        if (level5.waiting) {
+            ctx.fillText('Nate is administering another dose... Please wait', 400, 45); // Adjusted Y position for top positioning
+            
+            // Draw progress bar
+            ctx.fillStyle = 'rgba(204, 204, 204, 0.8)';
+            ctx.fillRect(250, 150, 300, 30);
+            let progress = level5.waitingTimer / level5.waitingMax;
+            ctx.fillStyle = 'rgba(76, 134, 211, 0.8)';
+            ctx.fillRect(250, 150, 300 * progress, 30);
+            
+            // Draw blue footer bar with 70% transparency - make it wider
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+            ctx.fillRect(-150, 520, VIRTUAL_WIDTH + 300, 60); // Extended width by 300px total (150px on each side), back to height 60
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Helvetica';
+            ctx.textAlign = 'center';
+            
+            let displayText = 'Waiting for patient response...';
+            if (feedback.visible && feedback.text) {
+                displayText = feedback.text;
+                // Check if this is a success message (contains "Correct" or "Great")
+                if (feedback.text.includes("Correct") || feedback.text.includes("Great") || feedback.text.includes("successful")) {
+                    ctx.fillStyle = '#28a745'; // Green for success
+                } else if (feedback.text.includes("still not responding")) {
+                    ctx.fillStyle = '#ff8c00'; // Amber/Orange for waiting message
+                } else {
+                    ctx.fillStyle = '#ff5147'; // Red for failure feedback
+                }
+            }
+            
+            ctx.fillText(displayText, 400, 555);
+        } else {
+            ctx.fillText('She is not responding. What should Nate now do?', 400, 45); // Adjusted Y position for top positioning
+            
+            // Draw options with transparency
+            for (let i = 0; i < level5.options.length; i++) {
+                let option = level5.options[i];
+                // Apply hover effect - lighter blue when hovered, normal dark blue otherwise
+                if (level5.hoveredOption === i) {
+                    ctx.fillStyle = 'rgba(120, 170, 230, 0.8)'; // Lighter blue for hovered with higher opacity
+                } else {
+                    ctx.fillStyle = 'rgba(25, 48, 74, 0.7)'; // #19304a with transparency
+                }
+                ctx.fillRect(option.x - option.width/2, option.y - option.height/2, option.width, option.height);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 18px Helvetica';
+                ctx.fillText(option.text, option.x, option.y + 6);
+            }
+            
+            // Draw blue footer bar with 70% transparency - make it wider
+            ctx.fillStyle = 'rgba(25, 48, 74, 0.85)'; // #19304a with transparency
+            ctx.fillRect(-150, 520, VIRTUAL_WIDTH + 300, 60); // Extended width by 300px total (150px on each side), back to height 60
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Helvetica';
+            ctx.textAlign = 'center';
+            
+            let displayText = 'Select his next action';
+            if (feedback.visible && feedback.text) {
+                displayText = feedback.text;
+                // Check if this is a success message (contains "Correct" or "Great")
+                if (feedback.text.includes("Correct") || feedback.text.includes("Great") || feedback.text.includes("successful")) {
+                    ctx.fillStyle = '#28a745'; // Green for success
+                } else if (feedback.text.includes("still not responding")) {
+                    ctx.fillStyle = '#ff8c00'; // Amber/Orange for waiting message
+                } else {
+                    ctx.fillStyle = '#ff5147'; // Red for failure feedback
+                }
+            }
+            
+            ctx.fillText(displayText, 400, 555);
+        }
+        
+        // Draw status information with semi-transparent background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.fillRect(50, 400, 300, 80);
+        ctx.fillStyle = '#000000';
+        ctx.font = '16px Helvetica';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Naloxone doses administered: ${level5.attempts}`, 70, 430);
+        ctx.fillText('Patient status: Unresponsive', 70, 455);
+    }
+}
+
+        // Initialize the game when the page loads
+        init();
+    </script>
+</body>
+</html>
+    </script>
+</body>
+</html>
