@@ -213,7 +213,9 @@
                                     resetLevel1_5(); // Add this line
                                     hideFeedback();
                                     resetLevel2();
+                                    resetLevel3(); // Add missing reset
                                     resetLevel4();
+                                    resetLevel5(); // Add missing reset
                                     currentState = GameState.START; // Changed from LEVEL_1 to START
                                 }, 2000);
                             }
@@ -313,7 +315,9 @@
                             resetLevel1_5(); // Add this line
                             hideFeedback();
                             resetLevel2();
+                            resetLevel3(); // Add missing reset
                             resetLevel4();
+                            resetLevel5(); // Add missing reset
                             currentState = GameState.START; // Changed from LEVEL_1 to START
                         }, 2000);
                     }
@@ -329,7 +333,9 @@
                         resetLevel1_5(); // Add this line
                         hideFeedback();
                         resetLevel2();
+                        resetLevel3(); // Add missing reset
                         resetLevel4();
+                        resetLevel5(); // Add missing reset
                         currentState = GameState.START; // Changed from LEVEL_1 to START
                     }, 2000);
                 }
@@ -346,8 +352,8 @@
                     level5.waiting = false;
                     // Don't increment attempts here since we already did it when the option was selected
                     
-                    // Patient wakes up after exactly 2 doses
-                    if (level5.attempts >= 2) {
+                    // Patient wakes up after just 1 correct wait action
+                    if (level5.attempts >= 1) {
                         level5.patientAwake = true;
                         showFeedback("Great! She is responding!");
                         setTimeout(() => {
@@ -1381,7 +1387,9 @@ ctx.fillText('Assemble the naloxone kit', 400, 45); // Adjusted Y position for t
                         resetLevel1_5(); // Add this line
                         hideFeedback();
                         resetLevel2();
+                        resetLevel3(); // Add missing reset
                         resetLevel4();
+                        resetLevel5(); // Add missing reset
                         currentState = GameState.START; // Changed from LEVEL_1 to START
                     }, 3000);
                 }
@@ -1544,6 +1552,7 @@ ctx.fillText('Assemble the naloxone kit', 400, 45); // Adjusted Y position for t
                             hideFeedback();
                             resetLevel2();
                             resetLevel4();
+                            resetLevel5(); // Add missing reset
                             currentState = GameState.START; // Changed from LEVEL_1 to START
                         }, 2000);
                     }
@@ -1623,7 +1632,9 @@ setTimeout(() => {
     resetLevel1_5(); // Add this line
     hideFeedback();
     resetLevel2();
+    resetLevel3(); // Add missing reset
     resetLevel4(); // <-- Add this line
+    resetLevel5(); // Add missing reset
     currentState = GameState.START; // Changed from LEVEL_1 to START
 }, 2000);
                     }
@@ -1690,6 +1701,16 @@ function resetLevel1_5() {
             level4.injectionHeld = false;
             level4.selectorKnob.x = level4.selector.x - (level4.selectorKnob.width / 2);
             level4.overlayAlpha = 0;
+        }
+
+        // Reset Level 5 to initial state
+        function resetLevel5() {
+            level5.patientAwake = false;
+            level5.attempts = 0;
+            level5.waitingTimer = 0;
+            level5.waiting = false;
+            level5.hoveredOption = null;
+            hideFeedback();
         }
 
         // Utility functions
@@ -2106,11 +2127,10 @@ function renderLevel5() {
         
         // Draw status information with semi-transparent background
         ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.fillRect(50, 400, 300, 80);
+        ctx.fillRect(50, 430, 250, 40);
         ctx.fillStyle = '#000000';
         ctx.font = '16px Helvetica';
         ctx.textAlign = 'left';
-        ctx.fillText(`Naloxone doses administered: ${level5.attempts}`, 70, 430);
         ctx.fillText('Patient status: Unresponsive', 70, 455);
     }
 }
